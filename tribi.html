@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Babylon.js Sphere</title>
+  <style> html, body { margin: 0; overflow: hidden; width: 100%; height: 100%; } </style>
+</head>
+<body>
+  <canvas id="renderCanvas" touch-action="none"></canvas>
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script>
+    const canvas = document.getElementById("renderCanvas");
+    const engine = new BABYLON.Engine(canvas, true);
+
+    const createScene = function () {
+      const scene = new BABYLON.Scene(engine);
+      const camera = new BABYLON.ArcRotateCamera("camera1", Math.PI / 2, Math.PI / 3, 3, BABYLON.Vector3.Zero(), scene);
+      camera.attachControl(canvas, true);
+
+      const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(1, 1, 0), scene);
+
+      const sphere = BABYLON.MeshBuilder.CreateSphere("sphere", { diameter: 2, segments: 32 }, scene);
+      const mat = new BABYLON.StandardMaterial("mat", scene);
+      mat.diffuseColor = new BABYLON.Color3(0, 0.6, 1);
+      sphere.material = mat;
+
+      return scene;
+    };
+
+    const scene = createScene();
+    engine.runRenderLoop(() => {
+      scene.render();
+    });
+    window.addEventListener("resize", () => {
+      engine.resize();
+    });
+  </script>
+</body>
+</html>

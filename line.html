@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Jet Plane with Three.js</title>
+  <style>
+    body { 
+      margin: 0; 
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <strong>3D Jet Plane</strong><br>
+    Click and drag to rotate<br>
+    Scroll to zoom
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    // Scene setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb);
+
+    // Camera setup
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(15, 10, 15);
+
+    // Renderer setup
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    // Lighting
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(20, 20, 20);
+    directionalLight.castShadow = true;
+    directionalLight.shadow.mapSize.width = 2048;
+    directionalLight.shadow.mapSize.height = 2048;
+    scene.add(directionalLight);
+
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+    scene.add(ambientLight);
+
+    // Materials
+    const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0xcccccc });
+    const wingMaterial = new THREE.MeshLambertMaterial({ color: 0x444444 });
+    const engineMaterial = new THREE.MeshLambertMaterial({ color: 0x222222 });
+    const detailMaterial = new THREE.MeshLambertMaterial({ color: 0x666666 });
+
+    // Create jet group
+    const jetGroup = new THREE.Group();
+
+    // Fuselage (main body)
+    const fuselageGeometry = new THREE.CylinderGeometry(0.8, 1.2, 12, 16);
+    const fuselage = new THREE.Mesh(fuselageGeometry, bodyMaterial);
+    fuselage.rotation.z = Math.PI / 2;
+    fuselage.castShadow = true;
+    jetGroup.add(fuselage);
+
+    // Nose cone
+    const noseGeometry = new THREE.ConeGeometry(0.8, 3, 16);
+    const nose = new THREE.Mesh(noseGeometry, bodyMaterial);
+    nose.position.x = 7.5;
+    nose.rotation.z = Math.PI / 2;
+    nose.castShadow = true;
+    jetGroup.add(nose);
+
+    // Tail section
+    const tailGeometry = new THREE.ConeGeometry(0.5, 2, 16);
+    const tail = new THREE.Mesh(tailGeometry, bodyMaterial);
+    tail.position.x = -8;
+    tail.rotation.z = -Math.PI / 2;
+    tail.castShadow = true;
+    jetGroup.add(tail);
+
+    // Main wings
+    const wingGeometry = new THREE.BoxGeometry(2, 12, 0.3);
+    const leftWing = new THREE.Mesh(wingGeometry, wingMaterial);
+    leftWing.position.set(0, 0, 0);
+    leftWing.castShadow = true;
+    jetGroup.add(leftWing);
+
+    // Wing tips
+    const wingTipGeometry = new THREE.BoxGeometry(0.5, 1, 2);
+    const leftWingTip = new THREE.Mesh(wingTipGeometry, detailMaterial);
+    leftWingTip.position.set(0, 6, 0.5);
+    jetGroup.add(leftWingTip);
+
+    const rightWingTip = new THREE.Mesh(wingTipGeometry, detailMaterial);
+    rightWingTip.position.set(0, -6, 0.5);
+    jetGroup.add(rightWingTip);
+
+    // Horizontal tail wing
+    const tailWingGeometry = new THREE.BoxGeometry(1, 6, 0.2);
+    const tailWing = new THREE.Mesh(tailWingGeometry, wingMaterial);
+    tailWing.position.set(-5.5, 0, 1.5);
+    tailWing.castShadow = true;
+    jetGroup.add(tailWing);
+
+    // Vertical tail fin
+    const tailFinGeometry = new THREE.BoxGeometry(0.3, 3, 2);
+    const tailFin = new THREE.Mesh(tailFinGeometry, wingMaterial);
+    tailFin.position.set(-6, 1.5, 0);
+    tailFin.castShadow = true;
+    jetGroup.add(tailFin);
+
+    // Engines
+    function createEngine(x, y, z) {
+      const engineGroup = new THREE.Group();
+      
+      const engineBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.6, 0.7, 3, 16),
+        engineMaterial
+      );
+      engineBody.rotation.z = Math.PI / 2;
+      engineBody.castShadow = true;
+      engineGroup.add(engineBody);
+
+      const engineIntake = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.5, 0.6, 0.5, 16),
+        new THREE.MeshLambertMaterial({ color: 0x111111 })
+      );
+      engineIntake.position.x = 1.8;
+      engineIntake.rotation.z = Math.PI / 2;
+      engineGroup.add(engineIntake);
+
+      const engineExhaust = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.4, 0.5, 1, 16),
+        new THREE.MeshLambertMaterial({ color: 0x333333 })
+      );
+      engineExhaust.position.x = -2;
+      engineExhaust.rotation.z = Math.PI / 2;
+      engineGroup.add(engineExhaust);
+
+      engineGroup.position.set(x, y, z);
+      return engineGroup;
+    }
+
+    const leftEngine = createEngine(2, 3, -1);
+    const rightEngine = createEngine(2, -3, -1);
+    jetGroup.add(leftEngine);
+    jetGroup.add(rightEngine);
+
+    // Cockpit
+    const cockpitGeometry = new THREE.SphereGeometry(0.8, 16, 8, 0, Math.PI);
+    const cockpit = new THREE.Mesh(cockpitGeometry, new THREE.MeshLambertMaterial({ 
+      color: 0x333333, 
+      transparent: true, 
+      opacity: 0.8 
+    }));
+    cockpit.position.set(3, 0, 0.8);
+    cockpit.rotation.z = Math.PI / 2;
+    cockpit.castShadow = true;
+    jetGroup.add(cockpit);
+
+    // Add landing gear
+    const gearMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
+    
+    // Front landing gear
+    const frontGear = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2), gearMaterial);
+    frontGear.position.set(3, 0, -2);
+    jetGroup.add(frontGear);
+
+    // Main landing gear
+    const leftGear = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 2.5), gearMaterial);
+    leftGear.position.set(-1, 2, -2.2);
+    jetGroup.add(leftGear);
+
+    const rightGear = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 2.5), gearMaterial);
+    rightGear.position.set(-1, -2, -2.2);
+    jetGroup.add(rightGear);
+
+    // Add the complete jet to the scene
+    scene.add(jetGroup);
+
+    // Add a ground plane for shadows
+    const groundGeometry = new THREE.PlaneGeometry(50, 50);
+    const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x90EE90 });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -4;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Mouse controls
+    let mouseX = 0, mouseY = 0;
+    let targetRotationX = 0, targetRotationY = 0;
+    let windowHalfX = window.innerWidth / 2;
+    let windowHalfY = window.innerHeight / 2;
+
+    document.addEventListener('mousemove', onDocumentMouseMove, false);
+    document.addEventListener('wheel', onDocumentWheel, false);
+
+    function onDocumentMouseMove(event) {
+      if (event.buttons === 1) { // Left mouse button pressed
+        mouseX = (event.clientX - windowHalfX);
+        mouseY = (event.clientY - windowHalfY);
+        targetRotationY = (mouseX / windowHalfX) * Math.PI;
+        targetRotationX = (mouseY / windowHalfY) * Math.PI * 0.5;
+      }
+    }
+
+    function onDocumentWheel(event) {
+      camera.position.z += event.deltaY * 0.01;
+      camera.position.z = Math.max(5, Math.min(50, camera.position.z));
+    }
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Smooth rotation
+      jetGroup.rotation.y += (targetRotationY - jetGroup.rotation.y) * 0.05;
+      jetGroup.rotation.x += (targetRotationX - jetGroup.rotation.x) * 0.05;
+
+      // Auto-rotate slowly
+      jetGroup.rotation.y += 0.005;
+
+      // Update camera to look at the jet
+      camera.lookAt(jetGroup.position);
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Handle window resize
+    window.addEventListener('resize', onWindowResize, false);
+
+    function onWindowResize() {
+      windowHalfX = window.innerWidth / 2;
+      windowHalfY = window.innerHeight / 2;
+      
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+  </script>
+</body>
+</html>

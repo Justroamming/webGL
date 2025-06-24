@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar System Simulation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babylonjs/6.0.0/babylon.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background: #000;
+        }
+        #canvas {
+            width: 100%;
+            height: 100vh;
+            display: block;
+        }
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            min-width: 200px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #4CAF50;
+        }
+        button {
+            background: #333;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            margin: 2px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #555;
+        }
+        button.active {
+            background: #4CAF50;
+        }
+        .speed-control {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .planet-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+        }
+        .info-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            min-width: 200px;
+        }
+        .planet-info {
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .orbit-toggle {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    
+    <div class="controls">
+        <div class="control-group">
+            <h3>Time Speed</h3>
+            <div class="speed-control">
+                <button onclick="setTimeSpeed(1)" class="active" id="speed-1">x1</button>
+                <button onclick="setTimeSpeed(2)" id="speed-2">x2</button>
+                <button onclick="setTimeSpeed(4)" id="speed-4">x4</button>
+                <button onclick="setTimeSpeed(8)" id="speed-8">x8</button>
+                <button onclick="setTimeSpeed(16)" id="speed-16">x16</button>
+                <button onclick="setTimeSpeed(32)" id="speed-32">x32</button>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <h3>Focus Planet</h3>
+            <div class="planet-buttons">
+                <button onclick="focusPlanet('sun')">Sun</button>
+                <button onclick="focusPlanet('mercury')">Mercury</button>
+                <button onclick="focusPlanet('venus')">Venus</button>
+                <button onclick="focusPlanet('earth')">Earth</button>
+                <button onclick="focusPlanet('mars')">Mars</button>
+                <button onclick="focusPlanet('jupiter')">Jupiter</button>
+                <button onclick="focusPlanet('saturn')">Saturn</button>
+                <button onclick="focusPlanet('uranus')">Uranus</button>
+                <button onclick="focusPlanet('neptune')">Neptune</button>
+            </div>
+        </div>
+        
+        <div class="control-group orbit-toggle">
+            <button onclick="toggleOrbits()" id="orbit-btn">Hide Orbits</button>
+            <button onclick="resetCamera()">Reset Camera</button>
+        </div>
+    </div>
+    
+    <div class="info-panel">
+        <div class="planet-info" id="planet-info">
+            <h3>Solar System</h3>
+            <p>Use mouse to rotate camera</p>
+            <p>Scroll to zoom</p>
+            <p>Click planets to focus</p>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let canvas, engine, scene, camera, sun, planets = {}, moons = {}, orbitLines = [];
+        let timeSpeed = 1;
+        let showOrbits = true;
+        let galacticMotion = { x: 0, y: 0, z: 0 };
+        
+        // Planet data with realistic orbital periods and sizes (scaled for visualization)
+        const planetData = {
+            mercury: { distance: 8, size: 0.3, period: 88, rotationPeriod: 59, color: '#8C7853' },
+            venus: { distance: 12, size: 0.4, period: 225, rotationPeriod: -243, color: '#FFC649' },
+            earth: { distance: 16, size: 0.5, period: 365, rotationPeriod: 1, color: '#6B93D6', moon: true },
+            mars: { distance: 22, size: 0.4, period: 687, rotationPeriod: 1.03, color: '#CD5C5C' },
+            jupiter: { distance: 35, size: 2, period: 4333, rotationPeriod: 0.41, color: '#D8CA9D' },
+            saturn: { distance: 50, size: 1.8, period: 10759, rotationPeriod: 0.45, color: '#FAD5A5', rings: true },
+            uranus: { distance: 70, size: 1.2, period: 30687, rotationPeriod: -0.72, color: '#4FD0E3' },
+            neptune: { distance: 90, size: 1.1, period: 60190, rotationPeriod: 0.67, color: '#4B70DD' }
+        };
+
+        // Initialize the scene
+        function init() {
+            canvas = document.getElementById('canvas');
+            engine = new BABYLON.Engine(canvas, true);
+            
+            createScene();
+            createSkybox();
+            createSun();
+            createPlanets();
+            createOrbitLines();
+            setupCamera();
+            setupLighting();
+            setupInteractions();
+            
+            // Render loop
+            engine.runRenderLoop(() => {
+                updateSolarSystem();
+                scene.render();
+            });
+            
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                engine.resize();
+            });
+        }
+
+        function createScene() {
+            scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color3(0, 0, 0);
+        }
+
+        function createSkybox() {
+            const skybox = BABYLON.MeshBuilder.CreateBox("skyBox", {size:1000}, scene);
+            const skyboxMaterial = new BABYLON.StandardMaterial("skyBox", scene);
+            skyboxMaterial.backFaceCulling = false;
+            skyboxMaterial.diffuseColor = new BABYLON.Color3(0, 0, 0);
+            skyboxMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+            skybox.material = skyboxMaterial;
+            skybox.infiniteDistance = true;
+            
+            // Add stars
+            const starsMaterial = new BABYLON.StandardMaterial("stars", scene);
+            starsMaterial.emissiveColor = new BABYLON.Color3(1, 1, 1);
+            starsMaterial.pointsCloud = true;
+            starsMaterial.pointSize = 2;
+            
+            // Create random stars
+            const starsVertices = [];
+            for (let i = 0; i < 1000; i++) {
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI;
+                const r = 400 + Math.random() * 100;
+                starsVertices.push(
+                    r * Math.sin(phi) * Math.cos(theta),
+                    r * Math.cos(phi),
+                    r * Math.sin(phi) * Math.sin(theta)
+                );
+            }
+            
+            const starsGeometry = new BABYLON.Mesh("stars", scene);
+            const vertexData = new BABYLON.VertexData();
+            vertexData.positions = starsVertices;
+            vertexData.applyToMesh(starsGeometry);
+            starsGeometry.material = starsMaterial;
+        }
+
+        function createSun() {
+            sun = BABYLON.MeshBuilder.CreateSphere("sun", {diameter: 4}, scene);
+            const sunMaterial = new BABYLON.StandardMaterial("sunMaterial", scene);
+            sunMaterial.emissiveColor = new BABYLON.Color3(1, 0.8, 0);
+            sunMaterial.diffuseColor = new BABYLON.Color3(1, 0.6, 0);
+            sun.material = sunMaterial;
+            
+            // Sun rotation
+            sun.rotationSpeed = 0.01;
+            
+            // Add sun glow effect
+            const glowLayer = new BABYLON.GlowLayer("glow", scene);
+            glowLayer.addIncludedOnlyMesh(sun);
+            glowLayer.intensity = 0.5;
+        }
+
+        function createPlanets() {
+            Object.keys(planetData).forEach(planetName => {
+                const data = planetData[planetName];
+                
+                // Create planet
+                const planet = BABYLON.MeshBuilder.CreateSphere(planetName, {diameter: data.size * 2}, scene);
+                const material = new BABYLON.StandardMaterial(planetName + "Material", scene);
+                material.diffuseColor = BABYLON.Color3.FromHexString(data.color);
+                material.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+                planet.material = material;
+                
+                // Position planet
+                planet.position.x = data.distance;
+                planet.orbitRadius = data.distance;
+                planet.orbitSpeed = (2 * Math.PI) / data.period * 25; // Convert to daily motion
+                planet.rotationSpeed = (2 * Math.PI) / data.rotationPeriod;
+                planet.orbitAngle = Math.random() * Math.PI * 2;
+                
+                planets[planetName] = planet;
+                
+                // Create rings for Saturn
+                if (data.rings) {
+                    const ring = BABYLON.MeshBuilder.CreateTorus(planetName + "Ring", {
+                        diameter: data.size * 3,
+                        thickness: 0.1,
+                        tessellation: 32
+                    }, scene);
+                    const ringMaterial = new BABYLON.StandardMaterial(planetName + "RingMaterial", scene);
+                    ringMaterial.diffuseColor = new BABYLON.Color3(0.8, 0.7, 0.6);
+                    ringMaterial.alpha = 0.6;
+                    ring.material = ringMaterial;
+                    ring.parent = planet;
+                    ring.rotation.x = Math.PI / 2;
+                }
+                
+                // Create moon for Earth
+                if (data.moon) {
+                    const moon = BABYLON.MeshBuilder.CreateSphere(planetName + "Moon", {diameter: 0.2}, scene);
+                    const moonMaterial = new BABYLON.StandardMaterial(planetName + "MoonMaterial", scene);
+                    moonMaterial.diffuseColor = new BABYLON.Color3(0.7, 0.7, 0.7);
+                    moon.material = moonMaterial;
+                    moon.position.x = data.size + 1;
+                    moon.parent = planet;
+                    moon.orbitSpeed = 0.1;
+                    moon.orbitAngle = 0;
+                    moons[planetName + "Moon"] = moon;
+                }
+            });
+        }
+
+        function createOrbitLines() {
+            Object.keys(planetData).forEach(planetName => {
+                const data = planetData[planetName];
+                const points = [];
+                
+                for (let i = 0; i <= 64; i++) {
+                    const angle = (i / 64) * Math.PI * 2;
+                    points.push(new BABYLON.Vector3(
+                        Math.cos(angle) * data.distance,
+                        0,
+                        Math.sin(angle) * data.distance
+                    ));
+                }
+                
+                const orbit = BABYLON.MeshBuilder.CreateLines(planetName + "Orbit", {points: points}, scene);
+                orbit.color = new BABYLON.Color3(0.3, 0.3, 0.3);
+                orbit.alpha = 0.5;
+                orbitLines.push(orbit);
+            });
+        }
+
+        function setupCamera() {
+    camera = new BABYLON.ArcRotateCamera("camera", 0, Math.PI / 3, 150, BABYLON.Vector3.Zero(), scene);
+    camera.attachControl(canvas, true); // Changed from attachControls to attachControl
+    camera.setTarget(BABYLON.Vector3.Zero());
+    camera.wheelPrecision = 50;
+    camera.minZ = 0.1;
+    camera.maxZ = 2000;
+}
+
+        function setupLighting() {
+            // Main sun light
+            const sunLight = new BABYLON.DirectionalLight("sunLight", new BABYLON.Vector3(-1, -1, -1), scene);
+            sunLight.diffuse = new BABYLON.Color3(1, 1, 0.9);
+            sunLight.intensity = 2;
+            
+            // Ambient light for space
+            const ambientLight = new BABYLON.HemisphericLight("ambientLight", new BABYLON.Vector3(0, 1, 0), scene);
+            ambientLight.diffuse = new BABYLON.Color3(0.1, 0.1, 0.2);
+            ambientLight.intensity = 0.3;
+        }
+
+        function updateSolarSystem() {
+            const deltaTime = engine.getDeltaTime() / 1000 * timeSpeed;
+            
+            // Update galactic motion
+            galacticMotion.x += 0.001 * timeSpeed;
+            galacticMotion.z += 0.0005 * timeSpeed;
+            
+            // Update sun
+            sun.rotation.y += sun.rotationSpeed * deltaTime;
+            sun.position.x = Math.sin(galacticMotion.x) * 2;
+            sun.position.z = Math.sin(galacticMotion.z) * 1;
+            
+            // Update planets
+            Object.keys(planets).forEach(planetName => {
+                const planet = planets[planetName];
+                const data = planetData[planetName];
+                
+                // Orbital motion
+                planet.orbitAngle += planet.orbitSpeed * deltaTime;
+                planet.position.x = Math.cos(planet.orbitAngle) * planet.orbitRadius + sun.position.x;
+                planet.position.z = Math.sin(planet.orbitAngle) * planet.orbitRadius + sun.position.z;
+                
+                // Planet rotation
+                planet.rotation.y += planet.rotationSpeed * deltaTime;
+                
+                // Update moon if exists
+                const moonName = planetName + "Moon";
+                if (moons[moonName]) {
+                    const moon = moons[moonName];
+                    moon.orbitAngle += moon.orbitSpeed * deltaTime;
+                    const moonDistance = data.size + 1;
+                    moon.position.x = Math.cos(moon.orbitAngle) * moonDistance;
+                    moon.position.z = Math.sin(moon.orbitAngle) * moonDistance;
+                    moon.rotation.y += 0.01 * deltaTime;
+                }
+            });
+        }
+
+        // Control functions
+        function setTimeSpeed(speed) {
+            timeSpeed = speed;
+            // Update button states
+            document.querySelectorAll('.speed-control button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('speed-' + speed).classList.add('active');
+        }
+
+        function focusPlanet(planetName) {
+            let target;
+            if (planetName === 'sun') {
+                target = sun;
+            } else {
+                target = planets[planetName];
+            }
+            
+            if (target) {
+                camera.setTarget(target.position);
+                const distance = planetName === 'sun' ? 15 : planetData[planetName].size * 8;
+                camera.radius = distance;
+                
+                // Update info panel
+                updateInfoPanel(planetName);
+            }
+        }
+
+        function toggleOrbits() {
+            showOrbits = !showOrbits;
+            orbitLines.forEach(orbit => {
+                orbit.isVisible = showOrbits;
+            });
+            document.getElementById('orbit-btn').textContent = showOrbits ? 'Hide Orbits' : 'Show Orbits';
+        }
+
+        function resetCamera() {
+            camera.setTarget(BABYLON.Vector3.Zero());
+            camera.radius = 150;
+            camera.alpha = 0;
+            camera.beta = Math.PI / 3;
+            updateInfoPanel('system');
+        }
+
+        function updateInfoPanel(planetName) {
+            const infoDiv = document.getElementById('planet-info');
+            if (planetName === 'sun') {
+                infoDiv.innerHTML = `
+                    <h3>Sun</h3>
+                    <p>Type: G-type main-sequence star</p>
+                    <p>Temperature: ~5,778 K</p>
+                    <p>Rotation: ~25 days</p>
+                `;
+            } else if (planetName === 'system') {
+                infoDiv.innerHTML = `
+                    <h3>Solar System</h3>
+                    <p>Use mouse to rotate camera</p>
+                    <p>Scroll to zoom</p>
+                    <p>Click planets to focus</p>
+                `;
+            } else if (planetData[planetName]) {
+                const data = planetData[planetName];
+                infoDiv.innerHTML = `
+                    <h3>${planetName.charAt(0).toUpperCase() + planetName.slice(1)}</h3>
+                    <p>Orbital Period: ${data.period} days</p>
+                    <p>Rotation Period: ${Math.abs(data.rotationPeriod)} ${data.rotationPeriod > 0 ? 'days' : 'days (retrograde)'}</p>
+                    <p>Distance: ${data.distance} AU (scaled)</p>
+                `;
+            }
+        }
+
+        // Add click interactions
+        function setupInteractions() {
+            scene.onPointerObservable.add((pointerInfo) => {
+                if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERDOWN && pointerInfo.pickInfo.hit) {
+                    const mesh = pointerInfo.pickInfo.pickedMesh;
+                    if (mesh === sun) {
+                        focusPlanet('sun');
+                    } else {
+                        Object.keys(planets).forEach(planetName => {
+                            if (mesh === planets[planetName]) {
+                                focusPlanet(planetName);
+                            }
+                        });
+                    }
+                }
+            });
+        }
+
+        // Initialize when page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            init();
+        });
+    </script>
+</body>
+</html>

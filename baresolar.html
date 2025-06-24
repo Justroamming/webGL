@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Solar System Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        #canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 12px;
+            z-index: 100;
+        }
+        
+        .control-group {
+            margin-bottom: 10px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        button {
+            margin: 2px;
+            padding: 5px 10px;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        
+        button:hover {
+            background: #555;
+        }
+        
+        button.active {
+            background: #007acc;
+        }
+        
+        .speed-buttons {
+            display: flex;
+            flex-wrap: wrap;
+        }
+        
+        .planet-buttons {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2px;
+        }
+        
+        .info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 11px;
+            max-width: 300px;
+        }
+        
+        .toggle-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    
+    <div class="controls" id="controls">
+        <div class="control-group">
+            <label>Time Speed:</label>
+            <div class="speed-buttons">
+                <button onclick="setTimeSpeed(1)" class="active" id="speed1">x1</button>
+                <button onclick="setTimeSpeed(2)" id="speed2">x2</button>
+                <button onclick="setTimeSpeed(4)" id="speed4">x4</button>
+                <button onclick="setTimeSpeed(8)" id="speed8">x8</button>
+                <button onclick="setTimeSpeed(16)" id="speed16">x16</button>
+                <button onclick="setTimeSpeed(32)" id="speed32">x32</button>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label>Focus on Planet:</label>
+            <div class="planet-buttons">
+                <button onclick="focusOnPlanet('sun')">Sun</button>
+                <button onclick="focusOnPlanet('mercury')">Mercury</button>
+                <button onclick="focusOnPlanet('venus')">Venus</button>
+                <button onclick="focusOnPlanet('earth')">Earth</button>
+                <button onclick="focusOnPlanet('mars')">Mars</button>
+                <button onclick="focusOnPlanet('jupiter')">Jupiter</button>
+                <button onclick="focusOnPlanet('saturn')">Saturn</button>
+                <button onclick="focusOnPlanet('uranus')">Uranus</button>
+                <button onclick="focusOnPlanet('neptune')">Neptune</button>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label>Display Options:</label>
+            <button onclick="toggleOrbits()" id="orbitBtn">Hide Orbits</button>
+            <button onclick="togglePlanetRotation()" id="rotationBtn">Stop Rotation</button>
+            <button onclick="resetCamera()">Reset Camera</button>
+        </div>
+        
+        <div class="control-group">
+            <label>Galaxy Motion:</label>
+            <button onclick="toggleGalaxyMotion()" id="galaxyBtn">Disable Galaxy Motion</button>
+        </div>
+    </div>
+    
+    <div class="toggle-controls">
+        <button onclick="toggleControls()">Hide Controls</button>
+    </div>
+    
+    <div class="info" id="info">
+        <strong>Controls:</strong><br>
+        • Mouse: Rotate camera<br>
+        • Scroll: Zoom in/out<br>
+        • Right-click + drag: Pan camera<br>
+        • Click planet buttons to focus
+    </div>
+
+    <script>
+        // WebGL Solar System Simulation
+        const canvas = document.getElementById('canvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        
+        if (!gl) {
+            alert('WebGL not supported');
+        }
+        
+        // Resize canvas
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Shader sources
+        const vertexShaderSource = `
+            attribute vec3 a_position;
+            attribute vec3 a_normal;
+            attribute vec2 a_texCoord;
+            
+            uniform mat4 u_worldMatrix;
+            uniform mat4 u_viewMatrix;
+            uniform mat4 u_projectionMatrix;
+            uniform mat4 u_normalMatrix;
+            uniform vec3 u_lightPosition;
+            
+            varying vec3 v_normal;
+            varying vec3 v_worldPosition;
+            varying vec3 v_lightDirection;
+            varying vec2 v_texCoord;
+            
+            void main() {
+                vec4 worldPosition = u_worldMatrix * vec4(a_position, 1.0);
+                v_worldPosition = worldPosition.xyz;
+                
+                v_normal = normalize((u_normalMatrix * vec4(a_normal, 0.0)).xyz);
+                v_lightDirection = normalize(u_lightPosition - v_worldPosition);
+                v_texCoord = a_texCoord;
+                
+                gl_Position = u_projectionMatrix * u_viewMatrix * worldPosition;
+            }
+        `;
+        
+        const fragmentShaderSource = `
+            precision mediump float;
+            
+            uniform vec3 u_color;
+            uniform vec3 u_lightColor;
+            uniform vec3 u_ambientLight;
+            uniform float u_shininess;
+            uniform bool u_isEmissive;
+            uniform bool u_hasTexture;
+            uniform sampler2D u_texture;
+            uniform vec3 u_cameraPosition;
+            
+            varying vec3 v_normal;
+            varying vec3 v_worldPosition;
+            varying vec3 v_lightDirection;
+            varying vec2 v_texCoord;
+            
+            void main() {
+                vec3 baseColor = u_color;
+                
+                if (u_hasTexture) {
+                    vec4 texColor = texture2D(u_texture, v_texCoord);
+                    baseColor = texColor.rgb;
+                }
+                
+                if (u_isEmissive) {
+                    gl_FragColor = vec4(baseColor, 1.0);
+                    return;
+                }
+                
+                vec3 normal = normalize(v_normal);
+                vec3 lightDir = normalize(v_lightDirection);
+                vec3 viewDir = normalize(u_cameraPosition - v_worldPosition);
+                vec3 reflectDir = reflect(-lightDir, normal);
+                
+                // Ambient
+                vec3 ambient = u_ambientLight * baseColor;
+                
+                // Diffuse
+                float diff = max(dot(normal, lightDir), 0.0);
+                vec3 diffuse = diff * u_lightColor * baseColor;
+                
+                // Specular
+                float spec = pow(max(dot(viewDir, reflectDir), 0.0), u_shininess);
+                vec3 specular = spec * u_lightColor * 0.3;
+                
+                // Attenuation based on distance
+                float distance = length(v_worldPosition);
+                float attenuation = 1.0 / (1.0 + 0.001 * distance + 0.0001 * distance * distance);
+                
+                vec3 result = ambient + (diffuse + specular) * attenuation;
+                gl_FragColor = vec4(result, 1.0);
+            }
+        `;
+        
+        // Orbit line shader
+        const orbitVertexShader = `
+            attribute vec3 a_position;
+            uniform mat4 u_viewMatrix;
+            uniform mat4 u_projectionMatrix;
+            uniform mat4 u_worldMatrix;
+            
+            void main() {
+                gl_Position = u_projectionMatrix * u_viewMatrix * u_worldMatrix * vec4(a_position, 1.0);
+            }
+        `;
+        
+        const orbitFragmentShader = `
+            precision mediump float;
+            uniform vec3 u_color;
+            
+            void main() {
+                gl_FragColor = vec4(u_color, 0.3);
+            }
+        `;
+        
+        // Utility functions
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            
+            return shader;
+        }
+        
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program link error:', gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                return null;
+            }
+            
+            return program;
+        }
+        
+        // Matrix operations
+        const mat4 = {
+            identity: function() {
+                return [
+                    1, 0, 0, 0,
+                    0, 1, 0, 0,
+                    0, 0, 1, 0,
+                    0, 0, 0, 1
+                ];
+            },
+            
+            multiply: function(a, b) {
+                const result = [];
+                for (let i = 0; i < 4; i++) {
+                    for (let j = 0; j < 4; j++) {
+                        result[i * 4 + j] = 
+                            a[i * 4 + 0] * b[0 * 4 + j] +
+                            a[i * 4 + 1] * b[1 * 4 + j] +
+                            a[i * 4 + 2] * b[2 * 4 + j] +
+                            a[i * 4 + 3] * b[3 * 4 + j];
+                    }
+                }
+                return result;
+            },
+            
+            translate: function(tx, ty, tz) {
+                return [
+                    1, 0, 0, 0,
+                    0, 1, 0, 0,
+                    0, 0, 1, 0,
+                    tx, ty, tz, 1
+                ];
+            },
+            
+            rotateX: function(angleInRadians) {
+                const c = Math.cos(angleInRadians);
+                const s = Math.sin(angleInRadians);
+                return [
+                    1, 0, 0, 0,
+                    0, c, s, 0,
+                    0, -s, c, 0,
+                    0, 0, 0, 1
+                ];
+            },
+            
+            rotateY: function(angleInRadians) {
+                const c = Math.cos(angleInRadians);
+                const s = Math.sin(angleInRadians);
+                return [
+                    c, 0, -s, 0,
+                    0, 1, 0, 0,
+                    s, 0, c, 0,
+                    0, 0, 0, 1
+                ];
+            },
+            
+            rotateZ: function(angleInRadians) {
+                const c = Math.cos(angleInRadians);
+                const s = Math.sin(angleInRadians);
+                return [
+                    c, s, 0, 0,
+                    -s, c, 0, 0,
+                    0, 0, 1, 0,
+                    0, 0, 0, 1
+                ];
+            },
+            
+            scale: function(sx, sy, sz) {
+                return [
+                    sx, 0, 0, 0,
+                    0, sy, 0, 0,
+                    0, 0, sz, 0,
+                    0, 0, 0, 1
+                ];
+            },
+            
+            perspective: function(fieldOfViewInRadians, aspect, near, far) {
+                const f = Math.tan(Math.PI * 0.5 - 0.5 * fieldOfViewInRadians);
+                const rangeInv = 1.0 / (near - far);
+                
+                return [
+                    f / aspect, 0, 0, 0,
+                    0, f, 0, 0,
+                    0, 0, (near + far) * rangeInv, -1,
+                    0, 0, near * far * rangeInv * 2, 0
+                ];
+            },
+            
+            lookAt: function(cameraPosition, target, up) {
+                const zAxis = normalize(subtract(cameraPosition, target));
+                const xAxis = normalize(cross(up, zAxis));
+                const yAxis = normalize(cross(zAxis, xAxis));
+                
+                return [
+                    xAxis[0], xAxis[1], xAxis[2], 0,
+                    yAxis[0], yAxis[1], yAxis[2], 0,
+                    zAxis[0], zAxis[1], zAxis[2], 0,
+                    cameraPosition[0], cameraPosition[1], cameraPosition[2], 1
+                ];
+            },
+            
+            inverse: function(m) {
+                const inv = [];
+                inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] + m[9] * m[7] * m[14] + m[13] * m[6] * m[11] - m[13] * m[7] * m[10];
+                inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] - m[8] * m[7] * m[14] - m[12] * m[6] * m[11] + m[12] * m[7] * m[10];
+                inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] + m[8] * m[7] * m[13] + m[12] * m[5] * m[11] - m[12] * m[7] * m[9];
+                inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14] - m[8] * m[6] * m[13] - m[12] * m[5] * m[10] + m[12] * m[6] * m[9];
+                inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15] - m[9] * m[3] * m[14] - m[13] * m[2] * m[11] + m[13] * m[3] * m[10];
+                inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15] + m[8] * m[3] * m[14] + m[12] * m[2] * m[11] - m[12] * m[3] * m[10];
+                inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15] - m[8] * m[3] * m[13] - m[12] * m[1] * m[11] + m[12] * m[3] * m[9];
+                inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14] + m[8] * m[2] * m[13] + m[12] * m[1] * m[10] - m[12] * m[2] * m[9];
+                inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15] + m[5] * m[3] * m[14] + m[13] * m[2] * m[7] - m[13] * m[3] * m[6];
+                inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15] - m[4] * m[3] * m[14] - m[12] * m[2] * m[7] + m[12] * m[3] * m[6];
+                inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15] + m[4] * m[3] * m[13] + m[12] * m[1] * m[7] - m[12] * m[3] * m[5];
+                inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14] - m[4] * m[2] * m[13] - m[12] * m[1] * m[6] + m[12] * m[2] * m[5];
+                inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11] - m[5] * m[3] * m[10] - m[9] * m[2] * m[7] + m[9] * m[3] * m[6];
+                inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] + m[4] * m[3] * m[10] + m[8] * m[2] * m[7] - m[8] * m[3] * m[6];
+                inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] - m[4] * m[3] * m[9] - m[8] * m[1] * m[7] + m[8] * m[3] * m[5];
+                inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] + m[4] * m[2] * m[9] + m[8] * m[1] * m[6] - m[8] * m[2] * m[5];
+                
+                let det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+                if (det === 0) return null;
+                
+                det = 1.0 / det;
+                for (let i = 0; i < 16; i++) {
+                    inv[i] = inv[i] * det;
+                }
+                return inv;
+            }
+        };
+        
+        // Vector operations
+        function subtract(a, b) {
+            return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        }
+        
+        function normalize(v) {
+            const length = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+            if (length > 0.00001) {
+                return [v[0] / length, v[1] / length, v[2] / length];
+            } else {
+                return [0, 0, 0];
+            }
+        }
+        
+        function cross(a, b) {
+            return [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0]
+            ];
+        }
+        
+        // Create sphere geometry
+        function createSphere(radius, latBands, longBands) {
+            const vertices = [];
+            const normals = [];
+            const texCoords = [];
+            const indices = [];
+            
+            for (let lat = 0; lat <= latBands; lat++) {
+                const theta = lat * Math.PI / latBands;
+                const sinTheta = Math.sin(theta);
+                const cosTheta = Math.cos(theta);
+                
+                for (let long = 0; long <= longBands; long++) {
+                    const phi = long * 2 * Math.PI / longBands;
+                    const sinPhi = Math.sin(phi);
+                    const cosPhi = Math.cos(phi);
+                    
+                    const x = cosPhi * sinTheta;
+                    const y = cosTheta;
+                    const z = sinPhi * sinTheta;
+                    
+                    vertices.push(radius * x, radius * y, radius * z);
+                    normals.push(x, y, z);
+                    texCoords.push(1 - (long / longBands), 1 - (lat / latBands));
+                }
+            }
+            
+            for (let lat = 0; lat < latBands; lat++) {
+                for (let long = 0; long < longBands; long++) {
+                    const first = (lat * (longBands + 1)) + long;
+                    const second = first + longBands + 1;
+                    
+                    indices.push(first, second, first + 1);
+                    indices.push(second, second + 1, first + 1);
+                }
+            }
+            
+            return { vertices, normals, texCoords, indices };
+        }
+        
+        // Create orbit circle
+        function createOrbitCircle(radius, segments) {
+            const vertices = [];
+            for (let i = 0; i <= segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                vertices.push(
+                    Math.cos(angle) * radius,
+                    0,
+                    Math.sin(angle) * radius
+                );
+            }
+            return vertices;
+        }
+        
+        // Create buffer
+        function createBuffer(gl, data, usage = gl.STATIC_DRAW) {
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), usage);
+            return buffer;
+        }
+        
+        function createIndexBuffer(gl, data) {
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(data), gl.STATIC_DRAW);
+            return buffer;
+        }
+        
+        // Initialize shaders
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+        const program = createProgram(gl, vertexShader, fragmentShader);
+        
+        const orbitVertexShader_ = createShader(gl, gl.VERTEX_SHADER, orbitVertexShader);
+        const orbitFragmentShader_ = createShader(gl, gl.FRAGMENT_SHADER, orbitFragmentShader);
+        const orbitProgram = createProgram(gl, orbitVertexShader_, orbitFragmentShader_);
+        
+        // Get attribute and uniform locations
+        const programInfo = {
+            attribLocations: {
+                position: gl.getAttribLocation(program, 'a_position'),
+                normal: gl.getAttribLocation(program, 'a_normal'),
+                texCoord: gl.getAttribLocation(program, 'a_texCoord'),
+            },
+            uniformLocations: {
+                worldMatrix: gl.getUniformLocation(program, 'u_worldMatrix'),
+                viewMatrix: gl.getUniformLocation(program, 'u_viewMatrix'),
+                projectionMatrix: gl.getUniformLocation(program, 'u_projectionMatrix'),
+                normalMatrix: gl.getUniformLocation(program, 'u_normalMatrix'),
+                lightPosition: gl.getUniformLocation(program, 'u_lightPosition'),
+                color: gl.getUniformLocation(program, 'u_color'),
+                lightColor: gl.getUniformLocation(program, 'u_lightColor'),
+                ambientLight: gl.getUniformLocation(program, 'u_ambientLight'),
+                shininess: gl.getUniformLocation(program, 'u_shininess'),
+                isEmissive: gl.getUniformLocation(program, 'u_isEmissive'),
+                hasTexture: gl.getUniformLocation(program, 'u_hasTexture'),
+                texture: gl.getUniformLocation(program, 'u_texture'),
+                cameraPosition: gl.getUniformLocation(program, 'u_cameraPosition'),
+            }
+        };
+        
+        const orbitProgramInfo = {
+            attribLocations: {
+                position: gl.getAttribLocation(orbitProgram, 'a_position'),
+            },
+            uniformLocations: {
+                worldMatrix: gl.getUniformLocation(orbitProgram, 'u_worldMatrix'),
+                viewMatrix: gl.getUniformLocation(orbitProgram, 'u_viewMatrix'),
+                projectionMatrix: gl.getUniformLocation(orbitProgram, 'u_projectionMatrix'),
+                color: gl.getUniformLocation(orbitProgram, 'u_color'),
+            }
+        };
+        
+        // Create sphere geometry
+        const sphereGeometry = createSphere(1, 32, 32);
+        const sphereBuffers = {
+            position: createBuffer(gl, sphereGeometry.vertices),
+            normal: createBuffer(gl, sphereGeometry.normals),
+            texCoord: createBuffer(gl, sphereGeometry.texCoords),
+            indices: createIndexBuffer(gl, sphereGeometry.indices)
+        };
+        
+        // Planet data (scaled for visualization)
+        const planetData = {
+            sun: {
+                radius: 2.0,
+                color: [1.0, 1.0, 0.0],
+                orbitRadius: 0,
+                orbitSpeed: 0,
+                rotationSpeed: 0.001,
+                isEmissive: true,
+                moons: []
+            },
+            mercury: {
+                radius: 0.15,
+                color: [0.8, 0.7, 0.6],
+                orbitRadius: 8,
+                orbitSpeed: 0.02,
+                rotationSpeed: 0.005,
+                isEmissive: false,
+                moons: []
+            },
+            venus: {
+                radius: 0.18,
+                color: [1.0, 0.8, 0.4],
+                orbitRadius: 12,
+                orbitSpeed: 0.015,
+                rotationSpeed: -0.003,
+                isEmissive: false,
+                moons: []
+            },
+            earth: {
+                radius: 0.2,
+                color: [0.4, 0.7, 1.0],
+                orbitRadius: 16,
+                orbitSpeed: 0.01,
+                rotationSpeed: 0.02,
+                isEmissive: false,
+                moons: [{
+                    radius: 0.05,
+                    color: [0.8, 0.8, 0.8],
+                    orbitRadius: 0.8,
+                    orbitSpeed: 0.08,
+                    rotationSpeed: 0.08
+                }]
+            },
+            mars: {
+                radius: 0.16,
+                color: [1.0, 0.5, 0.3],
+                orbitRadius: 20,
+                orbitSpeed: 0.008,
+                rotationSpeed: 0.018,
+                isEmissive: false,
+                moons: [
+                    {
+                        radius: 0.025,
+                        color: [0.7, 0.6, 0.5],
+                        orbitRadius: 0.6,
+                        orbitSpeed: 0.15,
+                        rotationSpeed: 0.15
+                    },
+                    {
+                        radius: 0.02,
+                        color: [0.6, 0.5, 0.4],
+                        orbitRadius: 0.9,
+                        orbitSpeed: 0.1,
+                        rotationSpeed: 0.1
+                    }
+                ]
+            },
+            jupiter: {
+                radius: 0.8,
+                color: [1.0, 0.8, 0.6],
+                orbitRadius: 28,
+                orbitSpeed: 0.004,
+                rotationSpeed: 0.04,
+                isEmissive: false,
+                moons: [
+                    {
+                        radius: 0.06,
+                        color: [1.0, 1.0, 0.8],
+                        orbitRadius: 1.5,
+                        orbitSpeed: 0.05,
+                        rotationSpeed: 0.05
+                    },
+                    {
+                        radius: 0.05,
+                        color: [0.8, 0.6, 0.4],
+                        orbitRadius: 2.0,
+                        orbitSpeed: 0.04,
+                        rotationSpeed: 0.04
+                    }
+                ]
+            },
+            saturn: {
+                radius: 0.7,
+                color: [1.0, 0.9, 0.7],
+                orbitRadius: 36,
+                orbitSpeed: 0.003,
+                rotationSpeed: 0.038,
+                isEmissive: false,
+                moons: [{
+                    radius: 0.08,
+                    color: [0.9, 0.8, 0.7],
+                    orbitRadius: 1.8,
+                    orbitSpeed: 0.03,
+                    rotationSpeed: 0.03
+                }]
+            },
+            uranus: {
+                radius: 0.5,
+                color: [0.4, 0.8, 0.9],
+                orbitRadius: 44,
+                orbitSpeed: 0.002,
+                rotationSpeed: 0.025,
+                isEmissive: false,
+                moons: [{
+                    radius: 0.04,
+                    color: [0.7, 0.7, 0.8],
+                    orbitRadius: 1.2,
+                    orbitSpeed: 0.06,
+                    rotationSpeed: 0.06
+                }]
+            },
+            neptune: {
+                radius: 0.48,
+                color: [0.2, 0.4, 1.0],
+                orbitRadius: 52,
+                orbitSpeed: 0.001,
+                rotationSpeed: 0.028,
+                isEmissive: false,
+                moons: [{
+                    radius: 0.04,
+                    color: [0.6, 0.6, 0.7],
+                    orbitRadius: 1.0,
+                    orbitSpeed: 0.07,
+                    rotationSpeed: 0.07
+                }]
+            }
+        };
+        
+        // Create orbit buffers
+        const orbitBuffers = {};
+        for (const planetName in planetData) {
+            const planet = planetData[planetName];
+            if (planet.orbitRadius > 0) {
+                const orbitVertices = createOrbitCircle(planet.orbitRadius, 64);
+                orbitBuffers[planetName] = createBuffer(gl, orbitVertices);
+            }
+        }
+        
+        // Animation state
+        let timeSpeed = 1;
+        let showOrbits = true;
+        let planetRotation = true;
+        let galaxyMotion = true;
+        let focusedPlanet = null;
+        
+        // Camera state
+        let camera = {
+            position: [0, 15, 60],
+            target: [0, 0, 0],
+            up: [0, 1, 0],
+            fov: Math.PI / 4,
+            aspect: canvas.width / canvas.height,
+            near: 0.1,
+            far: 1000
+        };
+        
+        // Mouse controls
+        let mouseDown = false;
+        let mouseX = 0;
+        let mouseY = 0;
+        let cameraRotationX = 0;
+        let cameraRotationY = 0;
+        let cameraDistance = 60;
+        let rightMouseDown = false;
+        let cameraPan = [0, 0];
+        
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
+                mouseDown = true;
+            } else if (e.button === 2) {
+                rightMouseDown = true;
+            }
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            e.preventDefault();
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (mouseDown) {
+                const deltaX = e.clientX - mouseX;
+                const deltaY = e.clientY - mouseY;
+                
+                cameraRotationY += deltaX * 0.01;
+                cameraRotationX += deltaY * 0.01;
+                cameraRotationX = Math.max(-Math.PI/2, Math.min(Math.PI/2, cameraRotationX));
+                
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            } else if (rightMouseDown) {
+                const deltaX = e.clientX - mouseX;
+                const deltaY = e.clientY - mouseY;
+                
+                cameraPan[0] += deltaX * 0.1;
+                cameraPan[1] -= deltaY * 0.1;
+                
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            }
+        });
+        
+        canvas.addEventListener('mouseup', (e) => {
+            mouseDown = false;
+            rightMouseDown = false;
+        });
+        
+        canvas.addEventListener('wheel', (e) => {
+            cameraDistance += e.deltaY * 0.1;
+            cameraDistance = Math.max(5, Math.min(200, cameraDistance));
+            e.preventDefault();
+        });
+        
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+        
+        // Animation loop
+        let lastTime = 0;
+        let time = 0;
+        let galaxyTime = 0;
+        
+        function animate(currentTime) {
+            const deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+            
+            time += deltaTime * 0.001 * timeSpeed;
+            galaxyTime += deltaTime * 0.0001;
+            
+            // Update camera
+            updateCamera();
+            
+            // Clear canvas
+            gl.clearColor(0.0, 0.0, 0.05, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            
+            // Set up matrices
+            const projectionMatrix = mat4.perspective(
+                camera.fov,
+                canvas.width / canvas.height,
+                camera.near,
+                camera.far
+            );
+            
+            const viewMatrix = mat4.lookAt(camera.position, camera.target, camera.up);
+            
+            // Galaxy motion transformation
+            let galaxyMatrix = mat4.identity();
+            if (galaxyMotion) {
+                galaxyMatrix = mat4.multiply(
+                    galaxyMatrix,
+                    mat4.translate(
+                        Math.sin(galaxyTime) * 5,
+                        Math.cos(galaxyTime * 0.7) * 2,
+                        Math.cos(galaxyTime) * 3
+                    )
+                );
+                galaxyMatrix = mat4.multiply(galaxyMatrix, mat4.rotateY(galaxyTime * 0.1));
+            }
+            
+            // Draw orbits
+            if (showOrbits) {
+                drawOrbits(projectionMatrix, viewMatrix, galaxyMatrix);
+            }
+            
+            // Draw planets
+            drawPlanets(projectionMatrix, viewMatrix, galaxyMatrix);
+            
+            requestAnimationFrame(animate);
+        }
+        
+        function updateCamera() {
+            if (focusedPlanet) {
+                const planet = planetData[focusedPlanet];
+                let planetPos = [0, 0, 0];
+                
+                if (focusedPlanet !== 'sun') {
+                    const orbitAngle = time * planet.orbitSpeed;
+                    planetPos = [
+                        Math.cos(orbitAngle) * planet.orbitRadius,
+                        0,
+                        Math.sin(orbitAngle) * planet.orbitRadius
+                    ];
+                }
+                
+                camera.target = planetPos;
+                
+                const distance = Math.max(planet.radius * 5, 10);
+                camera.position = [
+                    planetPos[0] + Math.cos(cameraRotationY) * Math.cos(cameraRotationX) * distance,
+                    planetPos[1] + Math.sin(cameraRotationX) * distance,
+                    planetPos[2] + Math.sin(cameraRotationY) * Math.cos(cameraRotationX) * distance
+                ];
+            } else {
+                camera.target = [cameraPan[0], cameraPan[1], 0];
+                camera.position = [
+                    cameraPan[0] + Math.cos(cameraRotationY) * Math.cos(cameraRotationX) * cameraDistance,
+                    cameraPan[1] + Math.sin(cameraRotationX) * cameraDistance,
+                    cameraPan[2] + Math.sin(cameraRotationY) * Math.cos(cameraRotationX) * cameraDistance
+                ];
+            }
+        }
+        
+        function drawOrbits(projectionMatrix, viewMatrix, galaxyMatrix) {
+            gl.useProgram(orbitProgram);
+            
+            gl.uniformMatrix4fv(orbitProgramInfo.uniformLocations.projectionMatrix, false, projectionMatrix);
+            gl.uniformMatrix4fv(orbitProgramInfo.uniformLocations.viewMatrix, false, viewMatrix);
+            gl.uniform3fv(orbitProgramInfo.uniformLocations.color, [0.3, 0.3, 0.3]);
+            
+            for (const planetName in orbitBuffers) {
+                const worldMatrix = mat4.multiply(galaxyMatrix, mat4.identity());
+                gl.uniformMatrix4fv(orbitProgramInfo.uniformLocations.worldMatrix, false, worldMatrix);
+                
+                gl.bindBuffer(gl.ARRAY_BUFFER, orbitBuffers[planetName]);
+                gl.enableVertexAttribArray(orbitProgramInfo.attribLocations.position);
+                gl.vertexAttribPointer(orbitProgramInfo.attribLocations.position, 3, gl.FLOAT, false, 0, 0);
+                
+                gl.drawArrays(gl.LINE_STRIP, 0, 65);
+            }
+        }
+        
+        function drawPlanets(projectionMatrix, viewMatrix, galaxyMatrix) {
+            gl.useProgram(program);
+            
+            gl.uniformMatrix4fv(programInfo.uniformLocations.projectionMatrix, false, projectionMatrix);
+            gl.uniformMatrix4fv(programInfo.uniformLocations.viewMatrix, false, viewMatrix);
+            gl.uniform3fv(programInfo.uniformLocations.lightPosition, [0, 0, 0]);
+            gl.uniform3fv(programInfo.uniformLocations.lightColor, [1.0, 1.0, 0.9]);
+            gl.uniform3fv(programInfo.uniformLocations.ambientLight, [0.1, 0.1, 0.15]);
+            gl.uniform3fv(programInfo.uniformLocations.cameraPosition, camera.position);
+            gl.uniform1f(programInfo.uniformLocations.shininess, 32.0);
+            gl.uniform1i(programInfo.uniformLocations.hasTexture, 0);
+            
+            // Set up vertex attributes
+            gl.bindBuffer(gl.ARRAY_BUFFER, sphereBuffers.position);
+            gl.enableVertexAttribArray(programInfo.attribLocations.position);
+            gl.vertexAttribPointer(programInfo.attribLocations.position, 3, gl.FLOAT, false, 0, 0);
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, sphereBuffers.normal);
+            gl.enableVertexAttribArray(programInfo.attribLocations.normal);
+            gl.vertexAttribPointer(programInfo.attribLocations.normal, 3, gl.FLOAT, false, 0, 0);
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, sphereBuffers.texCoord);
+            gl.enableVertexAttribArray(programInfo.attribLocations.texCoord);
+            gl.vertexAttribPointer(programInfo.attribLocations.texCoord, 2, gl.FLOAT, false, 0, 0);
+            
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sphereBuffers.indices);
+            
+            // Draw each planet
+            for (const planetName in planetData) {
+                const planet = planetData[planetName];
+                drawPlanet(planetName, planet, galaxyMatrix);
+            }
+        }
+        
+        function drawPlanet(name, planet, galaxyMatrix) {
+            // Calculate planet position
+            let worldMatrix = mat4.identity();
+            worldMatrix = mat4.multiply(worldMatrix, galaxyMatrix);
+            
+            if (planet.orbitRadius > 0) {
+                const orbitAngle = time * planet.orbitSpeed;
+                worldMatrix = mat4.multiply(worldMatrix, mat4.translate(
+                    Math.cos(orbitAngle) * planet.orbitRadius,
+                    0,
+                    Math.sin(orbitAngle) * planet.orbitRadius
+                ));
+            }
+            
+            // Planet rotation
+            if (planetRotation) {
+                worldMatrix = mat4.multiply(worldMatrix, mat4.rotateY(time * planet.rotationSpeed));
+            }
+            
+            // Scale planet
+            worldMatrix = mat4.multiply(worldMatrix, mat4.scale(planet.radius, planet.radius, planet.radius));
+            
+            // Set uniforms
+            gl.uniformMatrix4fv(programInfo.uniformLocations.worldMatrix, false, worldMatrix);
+            
+            const normalMatrix = mat4.inverse(worldMatrix);
+            if (normalMatrix) {
+                gl.uniformMatrix4fv(programInfo.uniformLocations.normalMatrix, false, normalMatrix);
+            }
+            
+            gl.uniform3fv(programInfo.uniformLocations.color, planet.color);
+            gl.uniform1i(programInfo.uniformLocations.isEmissive, planet.isEmissive);
+            
+            // Draw planet
+            gl.drawElements(gl.TRIANGLES, sphereGeometry.indices.length, gl.UNSIGNED_SHORT, 0);
+            
+            // Draw moons
+            if (planet.moons && planet.moons.length > 0) {
+                for (let i = 0; i < planet.moons.length; i++) {
+                    drawMoon(planet.moons[i], galaxyMatrix, name, planet);
+                }
+            }
+        }
+        
+        function drawMoon(moon, galaxyMatrix, planetName, planet) {
+            let worldMatrix = mat4.identity();
+            worldMatrix = mat4.multiply(worldMatrix, galaxyMatrix);
+            
+            // Planet position
+            if (planet.orbitRadius > 0) {
+                const orbitAngle = time * planet.orbitSpeed;
+                worldMatrix = mat4.multiply(worldMatrix, mat4.translate(
+                    Math.cos(orbitAngle) * planet.orbitRadius,
+                    0,
+                    Math.sin(orbitAngle) * planet.orbitRadius
+                ));
+            }
+            
+            // Moon orbit
+            const moonOrbitAngle = time * moon.orbitSpeed;
+            worldMatrix = mat4.multiply(worldMatrix, mat4.translate(
+                Math.cos(moonOrbitAngle) * moon.orbitRadius,
+                0,
+                Math.sin(moonOrbitAngle) * moon.orbitRadius
+            ));
+            
+            // Moon rotation
+            if (planetRotation) {
+                worldMatrix = mat4.multiply(worldMatrix, mat4.rotateY(time * moon.rotationSpeed));
+            }
+            
+            // Scale moon
+            worldMatrix = mat4.multiply(worldMatrix, mat4.scale(moon.radius, moon.radius, moon.radius));
+            
+            // Set uniforms
+            gl.uniformMatrix4fv(programInfo.uniformLocations.worldMatrix, false, worldMatrix);
+            
+            const normalMatrix = mat4.inverse(worldMatrix);
+            if (normalMatrix) {
+                gl.uniformMatrix4fv(programInfo.uniformLocations.normalMatrix, false, normalMatrix);
+            }
+            
+            gl.uniform3fv(programInfo.uniformLocations.color, moon.color);
+            gl.uniform1i(programInfo.uniformLocations.isEmissive, false);
+            
+            // Draw moon
+            gl.drawElements(gl.TRIANGLES, sphereGeometry.indices.length, gl.UNSIGNED_SHORT, 0);
+        }
+        
+        // Control functions
+        function setTimeSpeed(speed) {
+            timeSpeed = speed;
+            
+            // Update button states
+            document.querySelectorAll('.speed-buttons button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById('speed' + speed).classList.add('active');
+        }
+        
+        function focusOnPlanet(planetName) {
+            focusedPlanet = planetName;
+            cameraRotationX = 0;
+            cameraRotationY = 0;
+            cameraPan = [0, 0];
+        }
+        
+        function toggleOrbits() {
+            showOrbits = !showOrbits;
+            document.getElementById('orbitBtn').textContent = showOrbits ? 'Hide Orbits' : 'Show Orbits';
+        }
+        
+        function togglePlanetRotation() {
+            planetRotation = !planetRotation;
+            document.getElementById('rotationBtn').textContent = planetRotation ? 'Stop Rotation' : 'Start Rotation';
+        }
+        
+        function toggleGalaxyMotion() {
+            galaxyMotion = !galaxyMotion;
+            document.getElementById('galaxyBtn').textContent = galaxyMotion ? 'Disable Galaxy Motion' : 'Enable Galaxy Motion';
+        }
+        
+        function resetCamera() {
+            focusedPlanet = null;
+            cameraRotationX = 0;
+            cameraRotationY = 0;
+            cameraDistance = 60;
+            cameraPan = [0, 0];
+        }
+        
+        function toggleControls() {
+            const controls = document.getElementById('controls');
+            const btn = document.querySelector('.toggle-controls button');
+            if (controls.style.display === 'none') {
+                controls.style.display = 'block';
+                btn.textContent = 'Hide Controls';
+            } else {
+                controls.style.display = 'none';
+                btn.textContent = 'Show Controls';
+            }
+        }
+        
+        // Start animation
+        requestAnimationFrame(animate);
+        
+        // Add stars background
+        function createStars() {
+            const starCount = 1000;
+            const stars = [];
+            
+            for (let i = 0; i < starCount; i++) {
+                stars.push(
+                    (Math.random() - 0.5) * 2000,
+                    (Math.random() - 0.5) * 2000,
+                    (Math.random() - 0.5) * 2000
+                );
+            }
+            
+            return createBuffer(gl, stars);
+        }
+        
+        const starsBuffer = createStars();
+        
+        // Star rendering (simplified)
+        function drawStars(projectionMatrix, viewMatrix) {
+            gl.useProgram(orbitProgram);
+            
+            gl.uniformMatrix4fv(orbitProgramInfo.uniformLocations.projectionMatrix, false, projectionMatrix);
+            gl.uniformMatrix4fv(orbitProgramInfo.uniformLocations.viewMatrix, false, viewMatrix);
+            gl.uniformMatrix4fv(orbitProgramInfo.uniformLocations.worldMatrix, false, mat4.identity());
+            gl.uniform3fv(orbitProgramInfo.uniformLocations.color, [1.0, 1.0, 1.0]);
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, starsBuffer);
+            gl.enableVertexAttribArray(orbitProgramInfo.attribLocations.position);
+            gl.vertexAttribPointer(orbitProgramInfo.attribLocations.position, 3, gl.FLOAT, false, 0, 0);
+            
+            gl.drawArrays(gl.POINTS, 0, 1000);
+        }
+        
+        // Update animate function to include stars
+        const originalAnimate = animate;
+        animate = function(currentTime) {
+            const deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+            
+            time += deltaTime * 0.001 * timeSpeed;
+            galaxyTime += deltaTime * 0.0001;
+            
+            // Update camera
+            updateCamera();
+            
+            // Clear canvas
+            gl.clearColor(0.0, 0.0, 0.05, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            
+            // Set up matrices
+            const projectionMatrix = mat4.perspective(
+                camera.fov,
+                canvas.width / canvas.height,
+                camera.near,
+                camera.far
+            );
+            
+            const viewMatrix = mat4.lookAt(camera.position, camera.target, camera.up);
+            
+            // Draw stars
+            drawStars(projectionMatrix, viewMatrix);
+            
+            // Galaxy motion transformation
+            let galaxyMatrix = mat4.identity();
+            if (galaxyMotion) {
+                galaxyMatrix = mat4.multiply(
+                    galaxyMatrix,
+                    mat4.translate(
+                        Math.sin(galaxyTime) * 5,
+                        Math.cos(galaxyTime * 0.7) * 2,
+                        Math.cos(galaxyTime) * 3
+                    )
+                );
+                galaxyMatrix = mat4.multiply(galaxyMatrix, mat4.rotateY(galaxyTime * 0.1));
+            }
+            
+            // Draw orbits
+            if (showOrbits) {
+                drawOrbits(projectionMatrix, viewMatrix, galaxyMatrix);
+            }
+            
+            // Draw planets
+            drawPlanets(projectionMatrix, viewMatrix, galaxyMatrix);
+            
+            requestAnimationFrame(animate);
+        };
+        
+        console.log('Solar System Simulation Loaded');
+        console.log('Controls: Mouse to rotate, scroll to zoom, right-click to pan');
+    </script>
+</body>
+</html>

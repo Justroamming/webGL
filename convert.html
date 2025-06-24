@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>3D RGB to CMYK Color Cube</title>
+  <style>
+    body {
+      margin: 0;
+      background: linear-gradient(135deg, #0f0f23, #1a1a3a);
+      color: white;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      text-align: center;
+      min-height: 100vh;
+    }
+    
+    h2 {
+      margin: 20px 0;
+      font-size: 24px;
+      background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #ffe66d);
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+    }
+    
+    #controls {
+      margin: 20px;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 15px;
+      backdrop-filter: blur(10px);
+      display: inline-block;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    
+    .input-group {
+      display: inline-block;
+      margin: 0 15px;
+      vertical-align: middle;
+    }
+    
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 5px;
+      font-size: 14px;
+    }
+    
+    input[type=number] {
+      width: 70px;
+      padding: 8px;
+      border: none;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      text-align: center;
+      font-size: 16px;
+      transition: all 0.3s ease;
+    }
+    
+    input[type=number]:focus {
+      outline: none;
+      background: rgba(255, 255, 255, 0.3);
+      transform: scale(1.05);
+    }
+    
+    #colorBox {
+      width: 60px;
+      height: 60px;
+      display: inline-block;
+      border: 3px solid rgba(255, 255, 255, 0.5);
+      margin: 0 20px;
+      vertical-align: middle;
+      border-radius: 12px;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    button {
+      background: linear-gradient(45deg, #667eea, #764ba2);
+      border: none;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 25px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: bold;
+      transition: all 0.3s ease;
+      margin-left: 20px;
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+    
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+    }
+    
+    #scene-container {
+      width: 100%;
+      height: 500px;
+      margin: 20px 0;
+      border-radius: 15px;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      cursor: grab;
+    }
+    
+    #scene-container:active {
+      cursor: grabbing;
+    }
+    
+    #info {
+      margin: 20px;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      backdrop-filter: blur(10px);
+      font-size: 14px;
+      max-width: 800px;
+      margin: 20px auto;
+    }
+    
+    .conversion-display {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-top: 20px;
+    }
+    
+    .conversion-item {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 10px;
+      border-radius: 8px;
+      border-left: 4px solid;
+    }
+    
+    .rgb { border-left-color: #ff6b6b; }
+    .cmyk { border-left-color: #4ecdc4; }
+    .hex-cmyk { border-left-color: #ffe66d; }
+    .hex { border-left-color: #a8e6cf; }
+    
+    .interaction-hint {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.7);
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<h2>🎨 RGB → CMYK → Hex → Blended 3D Color Cube</h2>
+
+<div id="controls">
+  <div class="input-group">
+    <label>R</label>
+    <input type="number" id="r" value="100" min="0" max="255">
+  </div>
+  <div class="input-group">
+    <label>G</label>
+    <input type="number" id="g" value="150" min="0" max="255">
+  </div>
+  <div class="input-group">
+    <label>B</label>
+    <input type="number" id="b" value="200" min="0" max="255">
+  </div>
+  <div id="colorBox"></div>
+  <button onclick="updateCubeColor()">Convert & Update Cube</button>
+</div>
+
+<div id="scene-container">
+  <div class="interaction-hint">💡 Click and drag to rotate the cube</div>
+</div>
+
+<div id="info">
+  <div class="conversion-display">
+    <div class="conversion-item rgb">
+      <strong>RGB Original</strong><br>
+      <span id="rgb-display">rgb(100, 150, 200)</span>
+    </div>
+    <div class="conversion-item cmyk">
+      <strong>CMYK Values</strong><br>
+      <span id="cmyk-display">C: 50% M: 25% Y: 0% K: 22%</span>
+    </div>
+    <div class="conversion-item hex-cmyk">
+      <strong>CMYK Hexadecimal</strong><br>
+      <span id="hex-cmyk-display">#804000 #380000</span>
+    </div>
+    <div class="conversion-item hex">
+      <strong>Final Blended RGB</strong><br>
+      <span id="hex-display">rgb(177, 202, 227) - #B1CAE3</span>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+  // RGB → CMYK → Hex conversion functions
+  function rgbToCmyk(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    let k = 1 - Math.max(r, g, b);
+    let c = (1 - r - k) / (1 - k) || 0;
+    let m = (1 - g - k) / (1 - k) || 0;
+    let y = (1 - b - k) / (1 - k) || 0;
+    return { c, m, y, k };
+  }
+
+  function componentToHex(c) {
+    const hex = c.toString(16);
+    return hex.length == 1 ? "0" + hex : hex;
+  }
+
+  function rgbToHex(r, g, b) {
+    return "#" + componentToHex(r) + componentToHex(g) + componentToHex(b);
+  }
+
+  function blendColor(r, g, b) {
+    const cmyk = rgbToCmyk(r, g, b);
+    const c = Math.round(cmyk.c * 255);
+    const m = Math.round(cmyk.m * 255);
+    const y = Math.round(cmyk.y * 255);
+    const k = Math.round(cmyk.k * 255);
+
+    // Update RGB display
+    document.getElementById('rgb-display').textContent = `rgb(${r}, ${g}, ${b})`;
+    
+    // Update CMYK percentage display
+    document.getElementById('cmyk-display').textContent = `C: ${Math.round(cmyk.c * 100)}% M: ${Math.round(cmyk.m * 100)}% Y: ${Math.round(cmyk.y * 100)}% K: ${Math.round(cmyk.k * 100)}%`;
+
+    // Convert CMYK values to hexadecimal
+    const hexC = componentToHex(c);
+    const hexM = componentToHex(m);
+    const hexY = componentToHex(y);
+    const hexK = componentToHex(k);
+    
+    // Display CMYK as hex values
+    document.getElementById('hex-cmyk-display').textContent = `C:#${hexC}${hexC}${hexC} M:#${hexM}${hexM}${hexM} Y:#${hexY}${hexY}${hexY} K:#${hexK}${hexK}${hexK}`;
+
+    // Blend CMY into RGB-like color
+    const blendedR = Math.round((r + (255 - c)) / 2);
+    const blendedG = Math.round((g + (255 - m)) / 2);
+    const blendedB = Math.round((b + (255 - y)) / 2);
+
+    const finalHex = rgbToHex(blendedR, blendedG, blendedB);
+    document.getElementById('hex-display').textContent = `rgb(${blendedR}, ${blendedG}, ${blendedB}) - ${finalHex}`;
+
+    return { r: blendedR, g: blendedG, b: blendedB };
+  }
+
+  // THREE.js Scene Setup
+  let scene, camera, renderer, cube;
+  let isMouseDown = false;
+  let mouseX = 0, mouseY = 0;
+  let previousMouseX = 0, previousMouseY = 0;
+  let rotationX = 0, rotationY = 0;
+
+  function initScene() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+    
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth / 500, 0.1, 1000);
+    camera.position.z = 5;
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, 500);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.getElementById('scene-container').appendChild(renderer.domElement);
+
+    // Create cube geometry
+    const geometry = new THREE.BoxGeometry(2, 2, 2);
+    const material = new THREE.MeshStandardMaterial({ 
+      color: 0xffffff,
+      metalness: 0.3,
+      roughness: 0.4
+    });
+    cube = new THREE.Mesh(geometry, material);
+    cube.castShadow = true;
+    cube.receiveShadow = true;
+    scene.add(cube);
+
+    // Enhanced lighting
+    const ambient = new THREE.AmbientLight(0x404040, 0.4);
+    scene.add(ambient);
+    
+    const directional = new THREE.DirectionalLight(0xffffff, 0.8);
+    directional.position.set(5, 5, 5);
+    directional.castShadow = true;
+    directional.shadow.mapSize.width = 2048;
+    directional.shadow.mapSize.height = 2048;
+    scene.add(directional);
+
+    const pointLight = new THREE.PointLight(0xffffff, 0.5, 100);
+    pointLight.position.set(-5, -5, 5);
+    scene.add(pointLight);
+
+    // Mouse interaction events
+    const container = document.getElementById('scene-container');
+    container.addEventListener('mousedown', onMouseDown, false);
+    container.addEventListener('mousemove', onMouseMove, false);
+    container.addEventListener('mouseup', onMouseUp, false);
+    container.addEventListener('mouseleave', onMouseUp, false);
+    
+    animate();
+  }
+
+  function onMouseDown(event) {
+    isMouseDown = true;
+    previousMouseX = event.clientX;
+    previousMouseY = event.clientY;
+  }
+
+  function onMouseMove(event) {
+    if (!isMouseDown) return;
+    
+    mouseX = event.clientX;
+    mouseY = event.clientY;
+    
+    const deltaX = mouseX - previousMouseX;
+    const deltaY = mouseY - previousMouseY;
+    
+    rotationY += deltaX * 0.01;
+    rotationX += deltaY * 0.01;
+    
+    previousMouseX = mouseX;
+    previousMouseY = mouseY;
+  }
+
+  function onMouseUp(event) {
+    isMouseDown = false;
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    
+    // Apply rotation from mouse drag
+    cube.rotation.x = rotationX;
+    cube.rotation.y = rotationY;
+    
+    // Add subtle auto-rotation when not dragging
+    if (!isMouseDown) {
+      cube.rotation.x += 0.002;
+      cube.rotation.y += 0.003;
+      rotationX = cube.rotation.x;
+      rotationY = cube.rotation.y;
+    }
+    
+    renderer.render(scene, camera);
+  }
+
+  function updateCubeColor() {
+    const r = parseInt(document.getElementById('r').value);
+    const g = parseInt(document.getElementById('g').value);
+    const b = parseInt(document.getElementById('b').value);
+
+    // Original RGB box
+    const colorBox = document.getElementById('colorBox');
+    colorBox.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+
+    // Blend and update cube
+    const blended = blendColor(r, g, b);
+    const hex = (blended.r << 16) + (blended.g << 8) + blended.b;
+    cube.material.color.setHex(hex);
+    
+    // Add a subtle glow effect
+    cube.material.emissive.setHex(hex);
+    cube.material.emissiveIntensity = 0.1;
+  }
+
+  // Real-time updates
+  document.getElementById('r').addEventListener('input', updateCubeColor);
+  document.getElementById('g').addEventListener('input', updateCubeColor);
+  document.getElementById('b').addEventListener('input', updateCubeColor);
+
+  // Window resize handling
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / 500;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, 500);
+  });
+
+  // Initialize
+  initScene();
+  updateCubeColor();
+</script>
+
+</body>
+</html>
